@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MQTT Test</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+</head>
+<body>
+  <h2>Listening for ship position...</h2>
+  <pre id="log"></pre>
+  <script>
+    const client = mqtt.connect('ws://localhost:9001');
+    const log = document.getElementById('log');
+
+    client.on('connect', () => {
+      log.textContent += 'Connected to broker\n';
+      client.subscribe('ship/true_position');
+    });
+
+    client.on('message', (topic, message) => {
+      log.textContent += message.toString() + '\n';
+    });
+
+    client.on('error', (err) => {
+      log.textContent += 'Error: ' + err + '\n';
+    });
+  </script>
+</body>
+</html>

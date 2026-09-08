@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+*.h5
+*.keras
+node_modules/
