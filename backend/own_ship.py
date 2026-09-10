@@ -64,7 +64,12 @@ class OwnShip:
 
 
 def on_message(client, userdata, msg):
-    payload = json.loads(msg.payload.decode())
+    print("RECEIVED:", msg.topic, msg.payload.decode())
+    try:
+        payload = json.loads(msg.payload.decode())
+    except json.JSONDecodeError:
+        print("Bad JSON, ignoring:", msg.payload.decode())
+        return
     if msg.topic == "ship/control":
         ship.set_control(speed=payload.get("speed"), heading=payload.get("heading"))
     elif msg.topic == "attack/gps_control":
@@ -72,11 +77,12 @@ def on_message(client, userdata, msg):
 
 
 ship = OwnShip()
-client = mqtt.Client()
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
 client.on_message = on_message
 client.connect("localhost", 1883, 60)
-client.subscribe("ship/control")
-client.subscribe("attack/gps_control")
+result1 = client.subscribe("ship/control")
+result2 = client.subscribe("attack/gps_control")
+print("Subscribe results:", result1, result2)
 client.loop_start()
 
 print("Own ship running.")
