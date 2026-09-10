@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>INS Kiltan — spoofing detection dashboard</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+  <title>INS Kiltan Dashboard</title>
+  <link rel="stylesheet" href="lib/leaflet.css">
+  <script src="lib/leaflet.js"></script>
+  <script src="lib/mqtt.min.js"></script>
   <style>
     body { font-family: sans-serif; margin: 20px; background: #f5f4ee; }
-    #map { height: 420px; border-radius: 12px; }
+    #map { height: 420px; border-radius: 12px; border: 1px solid #ccc; }
     #banner { display:flex; align-items:center; gap:8px; padding:10px 16px; border-radius:12px; margin-bottom:12px; background:#EAF3DE; color:#27500A; font-weight:500; }
     #banner.alert { background:#FCEBEB; color:#791F1F; }
     .layout { display:grid; grid-template-columns: 1.4fr 1fr; gap:12px; }
@@ -16,12 +16,11 @@
     td { padding:4px 0; }
     input[type=number] { width:70px; padding:4px; margin-left:8px; }
     button { padding:6px 14px; margin-top:8px; cursor:pointer; }
-    .ship-icon { font-size: 22px; transform-origin: center; }
   </style>
 </head>
 <body>
-  <h2>INS Kiltan — spoofing detection dashboard</h2>
-  <div id="banner">Normal — GPS and AIS trusted</div>
+  <h2>INS Kiltan - spoofing detection dashboard</h2>
+  <div id="banner">Normal - GPS and AIS trusted</div>
 
   <div class="layout">
     <div id="map"></div>
@@ -29,7 +28,7 @@
       <div class="panel">
         <p style="color:#888;font-size:12px;margin:0 0 8px">Voyage control</p>
         <label>Speed (kn)<input type="number" id="speedInput" value="10" min="0" max="30"></label><br>
-        <label>Heading (°)<input type="number" id="headingInput" value="45" min="0" max="360"></label><br>
+        <label>Heading (deg)<input type="number" id="headingInput" value="45" min="0" max="360"></label><br>
         <button onclick="sendControl()">Set course</button>
       </div>
       <div class="panel">
@@ -50,15 +49,25 @@
   </div>
 
   <script>
+    console.log("Script starting");
+    console.log("Leaflet loaded:", typeof L);
+
     const BROKER = "ws://localhost:9001";
+    const mapDiv = document.getElementById('map');
+    console.log("Map div found:", mapDiv);
+
     const map = L.map('map').setView([12.0130, 75.1830], 13);
+    console.log("Map object created:", map);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors', maxZoom: 17
+      attribution: 'OpenStreetMap contributors',
+      maxZoom: 17
     }).addTo(map);
+    console.log("Tile layer added");
 
     function shipIcon(color, heading) {
       return L.divIcon({
-        html: `<div class="ship-icon" style="color:${color};transform:rotate(${heading}deg)">&#9650;</div>`,
+        html: '<div style="color:' + color + ';transform:rotate(' + heading + 'deg);font-size:22px">&#9650;</div>',
         className: '', iconSize: [22,22], iconAnchor: [11,11]
       });
     }
@@ -68,9 +77,11 @@
     let gpsLine = L.polyline([], {color:'#D85A30', weight:3, dashArray:'6,5'}).addTo(map);
     const contactMarkers = {};
 
+    console.log("Connecting to broker:", BROKER);
     const client = mqtt.connect(BROKER);
 
     client.on('connect', () => {
+      console.log("Connected to MQTT broker");
       client.subscribe('ship/true_position');
       client.subscribe('ship/gps_position');
       client.subscribe('ais/contacts');
@@ -78,10 +89,14 @@
       client.subscribe('alerts/ais_spoof');
     });
 
+    client.on('error', (err) => {
+      console.log("MQTT error:", err);
+    });
+
     function sendControl() {
       const speed = parseFloat(document.getElementById('speedInput').value);
       const heading = parseFloat(document.getElementById('headingInput').value);
-      client.publish('ship/control', JSON.stringify({speed, heading}));
+      client.publish('ship/control', JSON.stringify({speed: speed, heading: heading}));
     }
 
     client.on('message', (topic, message) => {
@@ -90,14 +105,14 @@
       if (topic === 'ship/true_position') {
         const icon = shipIcon('#185FA5', data.heading);
         if (!ownMarker) {
-          ownMarker = L.marker([data.lat, data.lon], {icon}).addTo(map).bindTooltip('INS Kiltan', {permanent:true, direction:'top'});
+          ownMarker = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip('INS Kiltan', {permanent:true, direction:'top'});
         } else {
           ownMarker.setLatLng([data.lat, data.lon]);
           ownMarker.setIcon(icon);
         }
         trueLine.addLatLng([data.lat, data.lon]);
         document.getElementById('gpsSpeed').textContent = data.speed.toFixed(1) + ' kn';
-        document.getElementById('gpsHeading').textContent = data.heading.toFixed(0) + '°';
+        document.getElementById('gpsHeading').textContent = data.heading.toFixed(0) + ' deg';
       }
 
       if (topic === 'ship/gps_position') {
@@ -109,26 +124,26 @@
         const icon = shipIcon('#5F5E5A', heading);
         if (contactMarkers[data.mmsi]) {
           contactMarkers[data.mmsi].setLatLng([data.lat, data.lon]);
-          contactMarkers[data.mmsi].setIcon(icon);
         } else {
-          contactMarkers[data.mmsi] = L.marker([data.lat, data.lon], {icon}).addTo(map).bindTooltip('MMSI ' + data.mmsi);
+          contactMarkers[data.mmsi] = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip('MMSI ' + data.mmsi);
         }
       }
 
       if (topic === 'alerts/gps_spoof') {
-        setBanner(data.status === 'spoofed', 'Alert — GPS spoofing detected');
+        setBanner(data.status === 'spoofed', 'Alert - GPS spoofing detected');
         document.getElementById('gpsTrust').textContent = data.status === 'spoofed' ? 'Spoofed' : 'Trusted';
       }
 
       if (topic === 'alerts/ais_spoof') {
-        setBanner(data.status === 'ghost', 'Alert — AIS ghost contact detected');
-        if (data.status === 'ghost' && contactMarkers[data.mmsi]) {
-          contactMarkers[data.mmsi].setIcon(shipIcon('#E24B4A', 0));
-        }
+        setBanner(data.status === 'ghost', 'Alert - AIS ghost contact detected');
       }
     });
 
     function setBanner(active, msg) {
       const b = document.getElementById('banner');
       if (active) { b.classList.add('alert'); b.textContent = msg; }
-      else { b.classList.remove('alert'); b.textContent
+      else { b.classList.remove('alert'); b.textContent = 'Normal - GPS and AIS trusted'; }
+    }
+  </script>
+</body>
+</html>
