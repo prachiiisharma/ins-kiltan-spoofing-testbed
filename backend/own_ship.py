@@ -1,20 +1,24 @@
 import json
 import time
 import socket
-import datetime
+import datetime as dt
 import paho.mqtt.client as mqtt
 
-from geo_utils import project_forward
+from geo_utils import project_forward, drift_offset
 from gnss_source import get_gnss_stream
 from nmea_utils import build_gga, build_rmc
+from environment_data import EnvironmentData
 
 ANCHOR_LAT, ANCHOR_LON = 12.0080, 75.1750
+
+env = EnvironmentData("marine_data.csv", "wind_data.csv")
 
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 OPENCPN_ADDR = ("127.0.0.1", 10110)
 
+
 def send_to_opencpn(lat, lon, speed_knots, heading_deg):
-    now = datetime.datetime.utcnow()
+    now = dt.datetime.utcnow()
     time_str = now.strftime("%H%M%S.00")
     date_str = now.strftime("%d%m%y")
     gga = build_gga(lat, lon, time_str)
@@ -46,12 +50,19 @@ class OwnShip:
 
     def step(self):
         now = time.time()
-        dt = now - self.last_tick
+        elapsed = now - self.last_tick
         self.last_tick = now
-        # guard against a huge dt (e.g. after the script was paused) causing a big jump
-        dt = min(dt, 2.0)
-        distance_m = self.speed_knots * 0.514444 * dt
+        elapsed = min(elapsed, 2.0)
+
+        distance_m = self.speed_knots * 0.514444 * elapsed
         self.lat, self.lon = project_forward(self.lat, self.lon, self.heading_deg, distance_m)
+
+        query_time = dt.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        c_speed, c_dir, w_speed, w_dir = env.get_conditions(query_time)
+        drift_speed, drift_bearing = drift_offset(c_speed, c_dir, w_speed, w_dir)
+        drift_distance_m = drift_speed * elapsed
+        self.lat, self.lon = project_forward(self.lat, self.lon, drift_bearing, drift_distance_m)
+
         true_lat, true_lon = self.lat, self.lon
 
         gps_lat, gps_lon = true_lat, true_lon
@@ -59,9 +70,9 @@ class OwnShip:
             gps_lat += 0.01
             gps_lon -= 0.01
         elif self.attack_type == "drift" and self.attack_start:
-            elapsed = now - self.attack_start
-            gps_lat += min(elapsed * 0.00003, 0.02)
-            gps_lon -= min(elapsed * 0.00002, 0.015)
+            attack_elapsed = now - self.attack_start
+            gps_lat += min(attack_elapsed * 0.00003, 0.02)
+            gps_lon -= min(attack_elapsed * 0.00002, 0.015)
 
         return true_lat, true_lon, gps_lat, gps_lon, now
 
