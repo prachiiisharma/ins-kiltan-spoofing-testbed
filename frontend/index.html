@@ -6,25 +6,31 @@
   <script src="lib/leaflet.js"></script>
   <script src="lib/mqtt.min.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 20px; background: #f5f4ee; }
-    #map { height: 420px; border-radius: 12px; border: 1px solid #ccc; }
+    body { font-family: sans-serif; margin: 16px; background: #f5f4ee; }
+    #map { height: 70vh; min-height: 450px; border-radius: 12px; border: 1px solid #ccc; margin-bottom: 12px; }
     #banner { display:flex; align-items:center; gap:8px; padding:10px 16px; border-radius:12px; margin-bottom:12px; background:#EAF3DE; color:#27500A; font-weight:500; }
     #banner.alert { background:#FCEBEB; color:#791F1F; }
-    .layout { display:grid; grid-template-columns: 1.4fr 1fr; gap:12px; }
-    .panel { background:white; border-radius:8px; padding:14px; margin-bottom:12px; }
-    table { width:100%; font-size:13px; border-collapse:collapse; }
-    td { padding:4px 0; }
+    .bottom-row { display:grid; grid-template-columns: 1fr 2fr; gap:12px; }
+    .panel { background:white; border-radius:8px; padding:14px; }
+    table { width:100%; font-size:12px; border-collapse:collapse; }
+    th { text-align:left; color:#888; font-weight:500; padding:4px 6px; border-bottom:1px solid #eee; }
+    td { padding:5px 6px; border-bottom:1px solid #f2f2f2; }
+    tr.ghost-row td { color:#791F1F; font-weight:500; background:#FCEBEB; }
+    .status-normal { color:#27500A; }
+    .status-ghost { color:#791F1F; font-weight:600; }
     input[type=number] { width:70px; padding:4px; margin-left:8px; }
     button { padding:6px 14px; margin-top:8px; cursor:pointer; }
+    .scroll-table { max-height: 220px; overflow-y: auto; }
   </style>
 </head>
 <body>
-  <h2>INS Kiltan - spoofing detection dashboard</h2>
+  <h2 style="margin:0 0 10px">INS Kiltan - spoofing detection dashboard</h2>
   <div id="banner">Normal - GPS and AIS trusted</div>
 
-  <div class="layout">
-    <div id="map"></div>
-    <div>
+  <div id="map"></div>
+
+  <div class="bottom-row">
+    <div style="display:flex;flex-direction:column;gap:12px">
       <div class="panel">
         <p style="color:#888;font-size:12px;margin:0 0 8px">Voyage control</p>
         <label>Speed (kn)<input type="number" id="speedInput" value="10" min="0" max="30"></label><br>
@@ -39,31 +45,28 @@
           <tr><td>Trust</td><td id="gpsTrust">Trusted</td></tr>
         </table>
       </div>
-      <div class="panel">
-        <p style="color:#888;font-size:12px;margin:0 0 6px">AIS contacts</p>
-        <table id="aisTable">
-          <tr style="color:#888"><td>MMSI</td><td>Status</td></tr>
+    </div>
+    <div class="panel">
+      <p style="color:#888;font-size:12px;margin:0 0 6px">AIS contacts (<span id="contactCount">0</span> tracked)</p>
+      <div class="scroll-table">
+        <table>
+          <thead>
+            <tr><th>MMSI</th><th>Name</th><th>Speed (kn)</th><th>Course</th><th>Range (nm)</th><th>Status</th><th>Last update</th></tr>
+          </thead>
+          <tbody id="aisTableBody"></tbody>
         </table>
       </div>
     </div>
   </div>
 
   <script>
-    console.log("Script starting");
-    console.log("Leaflet loaded:", typeof L);
-
     const BROKER = "ws://localhost:9001";
-    const mapDiv = document.getElementById('map');
-    console.log("Map div found:", mapDiv);
-
     const map = L.map('map').setView([12.0130, 75.1830], 13);
-    console.log("Map object created:", map);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: 'OpenStreetMap contributors',
       maxZoom: 17
     }).addTo(map);
-    console.log("Tile layer added");
 
     function shipIcon(color, heading) {
       return L.divIcon({
@@ -72,25 +75,30 @@
       });
     }
 
+    function haversineNm(lat1, lon1, lat2, lon2) {
+      const R = 3440.065; // earth radius in nautical miles
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
     let ownMarker = null;
+    let ownLat = null, ownLon = null;
     let trueLine = L.polyline([], {color:'#185FA5', weight:3}).addTo(map);
     let gpsLine = L.polyline([], {color:'#D85A30', weight:3, dashArray:'6,5'}).addTo(map);
     const contactMarkers = {};
+    const contactData = {};   // mmsi -> {name, sog, cog, lat, lon, status, lastSeen}
 
-    console.log("Connecting to broker:", BROKER);
     const client = mqtt.connect(BROKER);
 
     client.on('connect', () => {
-      console.log("Connected to MQTT broker");
       client.subscribe('ship/true_position');
       client.subscribe('ship/gps_position');
       client.subscribe('ais/contacts');
       client.subscribe('alerts/gps_spoof');
       client.subscribe('alerts/ais_spoof');
-    });
-
-    client.on('error', (err) => {
-      console.log("MQTT error:", err);
     });
 
     function sendControl() {
@@ -99,13 +107,40 @@
       client.publish('ship/control', JSON.stringify({speed: speed, heading: heading}));
     }
 
+    function renderAisTable() {
+      const tbody = document.getElementById('aisTableBody');
+      const rows = Object.values(contactData).sort((a, b) => (a.range ?? 999) - (b.range ?? 999));
+      document.getElementById('contactCount').textContent = rows.length;
+      tbody.innerHTML = rows.map(c => {
+        const rangeText = c.range !== null ? c.range.toFixed(1) : '--';
+        const statusClass = c.status === 'ghost' ? 'status-ghost' : 'status-normal';
+        const statusText = c.status === 'ghost' ? 'Ghost (flagged)' : 'Normal';
+        const rowClass = c.status === 'ghost' ? 'ghost-row' : '';
+        const secsAgo = Math.max(0, Math.round((Date.now() - c.lastSeen) / 1000));
+        return `<tr class="${rowClass}">
+          <td>${c.mmsi}</td>
+          <td>${c.name || '--'}</td>
+          <td>${c.sog.toFixed(1)}</td>
+          <td>${c.cog.toFixed(0)}&deg;</td>
+          <td>${rangeText}</td>
+          <td class="${statusClass}">${statusText}</td>
+          <td>${secsAgo}s ago</td>
+        </tr>`;
+      }).join('');
+    }
+
+    setInterval(renderAisTable, 1000);
+
     client.on('message', (topic, message) => {
       const data = JSON.parse(message.toString());
 
       if (topic === 'ship/true_position') {
+        ownLat = data.lat;
+        ownLon = data.lon;
         const icon = shipIcon('#185FA5', data.heading);
         if (!ownMarker) {
           ownMarker = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip('INS Kiltan', {permanent:true, direction:'top'});
+          map.setView([data.lat, data.lon], 14);
         } else {
           ownMarker.setLatLng([data.lat, data.lon]);
           ownMarker.setIcon(icon);
@@ -119,23 +154,52 @@
         gpsLine.addLatLng([data.lat, data.lon]);
       }
 
-      if (topic === 'ais/contacts') {
+           if (topic === 'ais/contacts') {
         const heading = data.cog || 0;
-        const icon = shipIcon('#5F5E5A', heading);
+        const existingStatus = contactData[data.mmsi] ? contactData[data.mmsi].status : 'normal';
+        const range = (ownLat !== null) ? haversineNm(ownLat, ownLon, data.lat, data.lon) : null;
+        const isNewContact = !contactData[data.mmsi];
+
+        contactData[data.mmsi] = {
+          mmsi: data.mmsi,
+          name: data.name,
+          sog: data.sog || 0,
+          cog: data.cog || 0,
+          lat: data.lat,
+          lon: data.lon,
+          range: range,
+          status: existingStatus,
+          lastSeen: Date.now()
+        };
+
+        const color = existingStatus === 'ghost' ? '#E24B4A' : '#5F5E5A';
+        const icon = shipIcon(color, heading);
+        const label = (data.name || ('MMSI ' + data.mmsi)) + (existingStatus === 'ghost' ? ' (FLAGGED)' : '');
         if (contactMarkers[data.mmsi]) {
           contactMarkers[data.mmsi].setLatLng([data.lat, data.lon]);
+          contactMarkers[data.mmsi].setIcon(icon);
         } else {
-          contactMarkers[data.mmsi] = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip('MMSI ' + data.mmsi);
+          contactMarkers[data.mmsi] = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip(label);
+        }
+
+        if (data.name === 'PNS Khyber' && isNewContact && ownLat !== null) {
+          const bounds = L.latLngBounds([[data.lat, data.lon], [ownLat, ownLon]]);
+          map.fitBounds(bounds, {padding: [60, 60]});
         }
       }
-
       if (topic === 'alerts/gps_spoof') {
         setBanner(data.status === 'spoofed', 'Alert - GPS spoofing detected');
         document.getElementById('gpsTrust').textContent = data.status === 'spoofed' ? 'Spoofed' : 'Trusted';
       }
 
       if (topic === 'alerts/ais_spoof') {
-        setBanner(data.status === 'ghost', 'Alert - AIS ghost contact detected');
+        setBanner(data.status === 'ghost', 'Alert - AIS ghost contact detected: MMSI ' + data.mmsi);
+        if (contactData[data.mmsi]) {
+          contactData[data.mmsi].status = 'ghost';
+        }
+        if (contactMarkers[data.mmsi]) {
+          contactMarkers[data.mmsi].setIcon(shipIcon('#E24B4A', 0));
+        }
       }
     });
 

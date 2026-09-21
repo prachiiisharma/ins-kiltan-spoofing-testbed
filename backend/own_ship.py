@@ -38,6 +38,7 @@ class OwnShip:
             self.speed_knots = speed
         if heading is not None:
             self.heading_deg = heading
+        print(f"Control updated: speed={self.speed_knots} heading={self.heading_deg}")
 
     def set_attack(self, attack_type):
         self.attack_type = attack_type
@@ -47,6 +48,8 @@ class OwnShip:
         now = time.time()
         dt = now - self.last_tick
         self.last_tick = now
+        # guard against a huge dt (e.g. after the script was paused) causing a big jump
+        dt = min(dt, 2.0)
         distance_m = self.speed_knots * 0.514444 * dt
         self.lat, self.lon = project_forward(self.lat, self.lon, self.heading_deg, distance_m)
         true_lat, true_lon = self.lat, self.lon
