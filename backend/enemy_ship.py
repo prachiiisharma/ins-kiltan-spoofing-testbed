@@ -1,63 +1,70 @@
 import json
 import time
 import socket
+import random
+import datetime as dt
 import paho.mqtt.client as mqtt
-from geo_utils import project_forward
 from pyais.encode import encode_dict
 
+UDP_SOCK = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 OPENCPN_ADDR = ("127.0.0.1", 10110)
-udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-
-def send_ais_to_opencpn(mmsi, lat, lon, sog, cog):
-    try:
-        data = {
-            "type": 1,
-            "mmsi": mmsi,
-            "lat": lat,
-            "lon": lon,
-            "speed": sog,
-            "course": cog,
-            "heading": int(cog),
-            "status": 0,
-            "turn": 0,
-            "accuracy": 0,
-            "maneuver": 0,
-            "raim": False,
-            "radio": 0,
-            "repeat": 0,
-            "second": 0,
-        }
-        sentences = encode_dict(data, talker_id="AI")
-        for s in sentences:
-            udp_sock.sendto((s + "\r\n").encode(), OPENCPN_ADDR)
-    except Exception as e:
-        print("AIVDM encode error (non-fatal):", e)
-
-
-real_ships = [
-    {"mmsi": 419123456, "name": "MV Kerala Star", "lat": 12.0250, "lon": 75.1900, "sog": 8.0, "cog": 120},
-    {"mmsi": 419234567, "name": "INS Sujata", "lat": 12.0050, "lon": 75.2000, "sog": 12.0, "cog": 200},
-    {"mmsi": 419345678, "name": "MT Malabar Coast", "lat": 12.0300, "lon": 75.1650, "sog": 6.0, "cog": 45},
-]
-
-enemy_ship = {
-    "mmsi": 863456789,
-    "name": "PNS Khyber",
-    "lat": 10.5700, "lon": 72.6400,
-    "sog": 16.0, "cog": 100,
-    "active": False,
+# Realistic background AIS traffic near Ezhimala / Lakshadweep approach
+real_ships = {
+    412345001: {"name": "MV KERALA STAR", "lat": 11.95, "lon": 75.30, "speed": 11.0, "heading": 200.0},
+    412345002: {"name": "INS SUJATA",     "lat": 12.05, "lon": 75.10, "speed": 14.0, "heading": 260.0},
+    412345003: {"name": "MT MALABAR COAST", "lat": 11.85, "lon": 75.40, "speed": 9.0,  "heading": 20.0},
 }
+
+# PNS Khyber ghost contact (spawned on command via attack/ais_control)
+khyber = {"active": False, "mmsi": 863456789, "lat": 11.30, "lon": 72.90, "speed": 16.0, "heading": 95.0}
+
+
+def step_ship(ship):
+    dist_deg = (ship["speed"] * 0.514444 * 2.0) / 111000.0
+    import math
+    ship["lat"] += dist_deg * math.cos(math.radians(ship["heading"]))
+    ship["lon"] += dist_deg * math.sin(math.radians(ship["heading"])) / math.cos(math.radians(ship["lat"]))
+
+
+def broadcast_aivdm(mmsi, lat, lon, speed_kn, heading_deg):
+    msg = {
+        "type": 1,
+        "mmsi": mmsi,
+        "lat": lat,
+        "lon": lon,
+        "speed": speed_kn,
+        "course": heading_deg,
+        "heading": int(heading_deg),
+        "status": 0,
+        "turn": 0,
+        "accuracy": 0,
+        "maneuver": 0,
+        "raim": False,
+        "radio": 0,
+    }
+    try:
+        sentences = encode_dict(msg, talker_id="AI")
+        for s in sentences:
+            UDP_SOCK.sendto((s + "\r\n").encode(), OPENCPN_ADDR)
+    except Exception as e:
+        print("AIVDM encode error:", e)
 
 
 def on_message(client, userdata, msg):
-    payload = json.loads(msg.payload.decode())
-    if payload.get("type") == "spawn_ghost":
-        enemy_ship["active"] = True
-        print("PNS Khyber AIS spoofing activated")
-    elif payload.get("type") == "stop_ghost":
-        enemy_ship["active"] = False
-        print("PNS Khyber AIS spoofing stopped")
+    print("RECEIVED:", msg.topic, msg.payload.decode())
+    try:
+        payload = json.loads(msg.payload.decode())
+    except json.JSONDecodeError:
+        return
+    if msg.topic == "attack/ais_control":
+        action = payload.get("action", "spawn")
+        khyber["active"] = (action == "spawn")
+        if "lat" in payload: khyber["lat"] = payload["lat"]
+        if "lon" in payload: khyber["lon"] = payload["lon"]
+        if "speed" in payload: khyber["speed"] = payload["speed"]
+        if "heading" in payload: khyber["heading"] = payload["heading"]
+        print(f"PNS Khyber ghost contact -> active={khyber['active']}")
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
@@ -66,34 +73,27 @@ client.connect("localhost", 1883, 60)
 client.subscribe("attack/ais_control")
 client.loop_start()
 
-print("Enemy ship module running. Broadcasting real background traffic.")
-print("Send attack/ais_control {type: spawn_ghost} to activate PNS Khyber.")
-print("Also broadcasting AIVDM to OpenCPN on UDP 10110.")
-
+print("Enemy ship / AIS simulator running.")
 while True:
-    for ship in real_ships:
-        ship["lat"], ship["lon"] = project_forward(ship["lat"], ship["lon"], ship["cog"], ship["sog"] * 0.514 * 2)
-        payload = {
-            "mmsi": ship["mmsi"], "name": ship["name"],
-            "lat": ship["lat"], "lon": ship["lon"],
-            "sog": ship["sog"], "cog": ship["cog"],
-            "source": "real", "timestamp": time.time()
-        }
-        client.publish("ais/contacts", json.dumps(payload))
-        send_ais_to_opencpn(ship["mmsi"], ship["lat"], ship["lon"], ship["sog"], ship["cog"])
+    contacts = []
+    for mmsi, ship in real_ships.items():
+        step_ship(ship)
+        broadcast_aivdm(mmsi, ship["lat"], ship["lon"], ship["speed"], ship["heading"])
+        contacts.append({"mmsi": mmsi, "name": ship["name"], "lat": ship["lat"], "lon": ship["lon"],
+                          "sog": ship["speed"], "cog": ship["heading"], "status": "background"})
 
-    if enemy_ship["active"]:
-        enemy_ship["lat"], enemy_ship["lon"] = project_forward(
-            enemy_ship["lat"], enemy_ship["lon"], enemy_ship["cog"], enemy_ship["sog"] * 0.514 * 2
-        )
-        payload = {
-            "mmsi": enemy_ship["mmsi"], "name": enemy_ship["name"],
-            "lat": enemy_ship["lat"], "lon": enemy_ship["lon"],
-            "sog": enemy_ship["sog"], "cog": enemy_ship["cog"],
-            "source": "ghost", "timestamp": time.time()
-        }
-        client.publish("ais/contacts", json.dumps(payload))
-        send_ais_to_opencpn(enemy_ship["mmsi"], enemy_ship["lat"], enemy_ship["lon"], enemy_ship["sog"], enemy_ship["cog"])
-        print(f"PNS Khyber broadcasting: lat={enemy_ship['lat']:.4f} lon={enemy_ship['lon']:.4f}")
+    if khyber["active"]:
+        step_ship(khyber)
+        broadcast_aivdm(khyber["mmsi"], khyber["lat"], khyber["lon"], khyber["speed"], khyber["heading"])
+        contacts.append({"mmsi": khyber["mmsi"], "name": "PNS KHYBER (ghost)", "lat": khyber["lat"],
+                          "lon": khyber["lon"], "sog": khyber["speed"], "cog": khyber["heading"],
+                          "status": "ghost"})
 
-    time.sleep(2)
+    # Dashboard (frontend/index.html) expects ONE flat message per contact
+    # on ais/contacts, not a batched {"contacts": [...]} envelope.
+    for c in contacts:
+        client.publish("ais/contacts", json.dumps(c))
+
+    # Detector (detection/ais_detector.py) reads the same per-contact stream.
+    print(f"Broadcast {len(contacts)} AIS contacts (khyber_active={khyber['active']})")
+    time.sleep(2.0)

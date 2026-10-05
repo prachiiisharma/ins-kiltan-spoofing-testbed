@@ -1,0 +1,17 @@
+# Dataset v1 generation config
+dataset_name: syndicate9_spoof_v1
+n_voyages: 60
+base_seed: 2026
+duration_min: [60, 120]          # voyage length
+imu_rate_hz: 10
+traffic_vessels: [4, 11]         # [min, max) other vessels per voyage
+warmup_s: 600                    # clean period at start of every voyage (detector warm-up)
+attack_duration_s: [120, 900]
+gnss_attacks_per_voyage_p: [0.15, 0.45, 0.40]   # P(0), P(1), P(2) attacks
+ais_attacks_per_voyage_p:  [0.10, 0.30, 0.35, 0.25]
+benign_manoeuvres: [1, 4]
+benign_gnss_degradations: [0, 3]
+ais_gap_prob: 0.25               # per traffic vessel
+split: {train: 0.70, val: 0.15, test: 0.15}
+write_raw_logs: test            # raw .nmea / AIVDM logs for: test | all | false (test split = end-to-end replay)
+write_csv: true                  # CSV copies of tables (besides parquet); IMU stays parquet-only

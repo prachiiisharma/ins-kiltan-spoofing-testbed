@@ -1,0 +1,19 @@
+file,scenario,file_label,params,first_alarm_s,flagged,early_alarm,detected_after_onset,delay_s
+A3-unspoofed-13-test_param-13.pcap,A3,unspoofed,"{""test_param"": ""13""}",,False,False,False,
+A2-spoofed-2-test_param-2.pcap,A2,spoofed,"{""test_param"": ""2""}",60.988250732421875,True,False,True,0.988250732421875
+A2-spoofed-5-test_param-5.pcap,A2,spoofed,"{""test_param"": ""5""}",60.99103927612305,True,False,True,0.9910392761230469
+A1-spoofed-1-test_param-1.pcap,A1,spoofed,"{""test_param"": ""1""}",61.00354766845703,True,False,True,1.0035476684570312
+A1-spoofed-8-test_param-8.pcap,A1,spoofed,"{""test_param"": ""8""}",61.014801025390625,True,False,True,1.014801025390625
+A1-spoofed-13-test_param-13.pcap,A1,spoofed,"{""test_param"": ""13""}",60.99846267700195,True,False,True,0.9984626770019531
+A2-unspoofed-6-test_param-6.pcap,A2,unspoofed,"{""test_param"": ""6""}",,False,False,False,
+A2-unspoofed-7-test_param-7.pcap,A2,unspoofed,"{""test_param"": ""7""}",,False,False,False,
+A2-unspoofed-14-test_param-14.pcap,A2,unspoofed,"{""test_param"": ""14""}",,False,False,False,
+A3-spoofed-5-test_param-5.pcap,A3,spoofed,"{""test_param"": ""5""}",61.98469924926758,True,False,True,1.9846992492675781
+A3-spoofed-9-test_param-9.pcap,A3,spoofed,"{""test_param"": ""9""}",61.998069763183594,True,False,True,1.9980697631835938
+A3-unspoofed-8-test_param-8.pcap,A3,unspoofed,"{""test_param"": ""8""}",,False,False,False,
+A3-unspoofed-9-test_param-9.pcap,A3,unspoofed,"{""test_param"": ""9""}",,False,False,False,
+A3-spoofed-12-test_param-12.pcap,A3,spoofed,"{""test_param"": ""12""}",62.00210952758789,True,False,True,2.0021095275878906
+A1-unspoofed-9-test_param-9.pcap,A1,unspoofed,"{""test_param"": ""9""}",,False,False,False,
+A1-unspoofed-11-test_param-11.pcap,A1,unspoofed,"{""test_param"": ""11""}",,False,False,False,
+A1-unspoofed-14-test_param-14.pcap,A1,unspoofed,"{""test_param"": ""14""}",,False,False,False,
+A2-spoofed-12-test_param-12.pcap,A2,spoofed,"{""test_param"": ""12""}",61.01634216308594,True,False,True,1.0163421630859375

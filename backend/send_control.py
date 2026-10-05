@@ -1,10 +1,8 @@
-import json
-import sys
+import json, sys
 import paho.mqtt.publish as publish
 
-speed = float(sys.argv[1])
-heading = float(sys.argv[2])
-
-payload = json.dumps({"speed": speed, "heading": heading})
-publish.single("ship/control", payload, hostname="localhost")
-print("Sent:", payload)
+# Usage: python send_control.py <speed_knots> <heading_deg>
+speed = float(sys.argv[1]) if len(sys.argv) > 1 else 12.0
+heading = float(sys.argv[2]) if len(sys.argv) > 2 else 270.0
+publish.single("ship/control", json.dumps({"speed": speed, "heading": heading}), hostname="localhost")
+print(f"Sent control: speed={speed} heading={heading}")

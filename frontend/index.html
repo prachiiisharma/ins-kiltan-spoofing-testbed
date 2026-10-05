@@ -18,7 +18,7 @@
     tr.ghost-row td { color:#791F1F; font-weight:500; background:#FCEBEB; }
     .status-normal { color:#27500A; }
     .status-ghost { color:#791F1F; font-weight:600; }
-    input[type=number] { width:70px; padding:4px; margin-left:8px; }
+    input[type=number] { width:70px; padding:4px; margin-left:6px; }
     button { padding:6px 14px; margin-top:8px; cursor:pointer; }
     .scroll-table { max-height: 220px; overflow-y: auto; }
   </style>
@@ -63,20 +63,20 @@
     const BROKER = "ws://localhost:9001";
     const map = L.map('map').setView([12.0130, 75.1830], 13);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: 'OpenStreetMap contributors',
-      maxZoom: 17
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri',
+      maxZoom: 19
     }).addTo(map);
 
     function shipIcon(color, heading) {
       return L.divIcon({
         html: '<div style="color:' + color + ';transform:rotate(' + heading + 'deg);font-size:22px">&#9650;</div>',
-        className: '', iconSize: [22,22], iconAnchor: [11,11]
+        className: '', iconSize: [22, 22], iconAnchor: [11, 11]
       });
     }
 
     function haversineNm(lat1, lon1, lat2, lon2) {
-      const R = 3440.065; // earth radius in nautical miles
+      const R = 3440.065;
       const toRad = deg => deg * Math.PI / 180;
       const dLat = toRad(lat2 - lat1);
       const dLon = toRad(lon2 - lon1);
@@ -89,7 +89,7 @@
     let trueLine = L.polyline([], {color:'#185FA5', weight:3}).addTo(map);
     let gpsLine = L.polyline([], {color:'#D85A30', weight:3, dashArray:'6,5'}).addTo(map);
     const contactMarkers = {};
-    const contactData = {};   // mmsi -> {name, sog, cog, lat, lon, status, lastSeen}
+    const contactData = {};
 
     const client = mqtt.connect(BROKER);
 
@@ -117,15 +117,7 @@
         const statusText = c.status === 'ghost' ? 'Ghost (flagged)' : 'Normal';
         const rowClass = c.status === 'ghost' ? 'ghost-row' : '';
         const secsAgo = Math.max(0, Math.round((Date.now() - c.lastSeen) / 1000));
-        return `<tr class="${rowClass}">
-          <td>${c.mmsi}</td>
-          <td>${c.name || '--'}</td>
-          <td>${c.sog.toFixed(1)}</td>
-          <td>${c.cog.toFixed(0)}&deg;</td>
-          <td>${rangeText}</td>
-          <td class="${statusClass}">${statusText}</td>
-          <td>${secsAgo}s ago</td>
-        </tr>`;
+        return '<tr class="' + rowClass + '"><td>' + c.mmsi + '</td><td>' + (c.name || '--') + '</td><td>' + c.sog.toFixed(1) + '</td><td>' + c.cog.toFixed(0) + '&deg;</td><td>' + rangeText + '</td><td class="' + statusClass + '">' + statusText + '</td><td>' + secsAgo + 's ago</td></tr>';
       }).join('');
     }
 
@@ -139,7 +131,7 @@
         ownLon = data.lon;
         const icon = shipIcon('#185FA5', data.heading);
         if (!ownMarker) {
-          ownMarker = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip('INS Kiltan', {permanent:true, direction:'top'});
+          ownMarker = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip('INS Kiltan', {permanent: true, direction: 'top'});
           map.setView([data.lat, data.lon], 14);
         } else {
           ownMarker.setLatLng([data.lat, data.lon]);
@@ -154,22 +146,14 @@
         gpsLine.addLatLng([data.lat, data.lon]);
       }
 
-           if (topic === 'ais/contacts') {
+      if (topic === 'ais/contacts') {
         const heading = data.cog || 0;
         const existingStatus = contactData[data.mmsi] ? contactData[data.mmsi].status : 'normal';
         const range = (ownLat !== null) ? haversineNm(ownLat, ownLon, data.lat, data.lon) : null;
-        const isNewContact = !contactData[data.mmsi];
 
         contactData[data.mmsi] = {
-          mmsi: data.mmsi,
-          name: data.name,
-          sog: data.sog || 0,
-          cog: data.cog || 0,
-          lat: data.lat,
-          lon: data.lon,
-          range: range,
-          status: existingStatus,
-          lastSeen: Date.now()
+          mmsi: data.mmsi, name: data.name, sog: data.sog || 0, cog: data.cog || 0,
+          lat: data.lat, lon: data.lon, range: range, status: existingStatus, lastSeen: Date.now()
         };
 
         const color = existingStatus === 'ghost' ? '#E24B4A' : '#5F5E5A';
@@ -181,12 +165,8 @@
         } else {
           contactMarkers[data.mmsi] = L.marker([data.lat, data.lon], {icon: icon}).addTo(map).bindTooltip(label);
         }
-
-        if (data.name === 'PNS Khyber' && isNewContact && ownLat !== null) {
-          const bounds = L.latLngBounds([[data.lat, data.lon], [ownLat, ownLon]]);
-          map.fitBounds(bounds, {padding: [60, 60]});
-        }
       }
+
       if (topic === 'alerts/gps_spoof') {
         setBanner(data.status === 'spoofed', 'Alert - GPS spoofing detected');
         document.getElementById('gpsTrust').textContent = data.status === 'spoofed' ? 'Spoofed' : 'Trusted';
@@ -194,12 +174,8 @@
 
       if (topic === 'alerts/ais_spoof') {
         setBanner(data.status === 'ghost', 'Alert - AIS ghost contact detected: MMSI ' + data.mmsi);
-        if (contactData[data.mmsi]) {
-          contactData[data.mmsi].status = 'ghost';
-        }
-        if (contactMarkers[data.mmsi]) {
-          contactMarkers[data.mmsi].setIcon(shipIcon('#E24B4A', 0));
-        }
+        if (contactData[data.mmsi]) { contactData[data.mmsi].status = 'ghost'; }
+        if (contactMarkers[data.mmsi]) { contactMarkers[data.mmsi].setIcon(shipIcon('#E24B4A', 0)); }
       }
     });
 

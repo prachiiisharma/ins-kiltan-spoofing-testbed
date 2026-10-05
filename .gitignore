@@ -6,3 +6,10 @@ __pycache__/
 *.keras
 node_modules/
 models/dataset/
+
+venv/
+__pycache__/
+*.pyc
+marsim_kit/downloads/
+spoof_generator/data/
+models/mana/

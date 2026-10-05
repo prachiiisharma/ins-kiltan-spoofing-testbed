@@ -1,0 +1,4 @@
+scenario,files,file_precision,file_recall,file_f1,strict_precision,strict_recall,strict_f1,false_alarm_rate_normal_files,median_delay_s,p90_delay_s
+A1,6.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0,1.0,1.01
+A2,6.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0,0.99,1.01
+A3,6.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0,2.0,2.0

@@ -1,0 +1,8 @@
+numpy
+pandas
+pyarrow
+scikit-learn
+joblib
+scapy
+pyserial
+paho-mqtt

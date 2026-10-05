@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+data/
+downloads/
+features/
+results/*/model.joblib
